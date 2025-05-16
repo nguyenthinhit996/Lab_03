@@ -66,18 +66,31 @@
   <script>
     // feature detection
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition || !navigator.mediaDevices) {
+    if (!SpeechRecognition || !navigator.mediaDevices || !window.MediaRecorder) {
       alert('Sorry, your browser does not support one of the required APIs.');
     } else {
-      // elements
       const btn       = document.getElementById('toggleBtn');
       const playBtn   = document.getElementById('playBtn');
       const transcriptDiv = document.getElementById('transcript');
       const audioEl   = document.getElementById('audioPlayback');
 
-      // state
       let recording = false;
       let recognition, mediaRecorder, audioChunks = [], mediaStream;
+
+      // choose a MIME type that the browser supports
+      function pickMimeType() {
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          return 'audio/webm;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/mp4;codecs=mp4a.40.2')) {
+          return 'audio/mp4;codecs=mp4a.40.2';
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          return 'audio/mp4';
+        } else if (MediaRecorder.isTypeSupported('audio/mpeg')) {
+          return 'audio/mpeg';
+        } else {
+          return '';
+        }
+      }
 
       // setup SpeechRecognition
       recognition = new SpeechRecognition();
@@ -95,7 +108,7 @@
       });
 
       recognition.addEventListener('end', () => {
-        if (recording) recognition.start(); 
+        if (recording) recognition.start();
         else btn.textContent = 'Start Recording';
       });
 
@@ -104,24 +117,25 @@
         alert('Speech recognition error: ' + e.error);
       });
 
-      // button handlers
       btn.addEventListener('click', async () => {
         if (!recording) {
           // **START recording**
           mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          mediaRecorder = new MediaRecorder(mediaStream);
-          audioChunks = [];
+          const mimeType = pickMimeType();
+          mediaRecorder = mimeType
+            ? new MediaRecorder(mediaStream, { mimeType })
+            : new MediaRecorder(mediaStream);
 
+          audioChunks = [];
           mediaRecorder.addEventListener('dataavailable', e => {
             if (e.data.size > 0) audioChunks.push(e.data);
           });
           mediaRecorder.addEventListener('stop', () => {
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            const url = URL.createObjectURL(audioBlob);
+            const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+            const url  = URL.createObjectURL(blob);
             audioEl.src = url;
             audioEl.style.display = 'block';
             playBtn.disabled = false;
-            // stop tracks so mic light turns off
             mediaStream.getTracks().forEach(t => t.stop());
           });
 
@@ -131,7 +145,7 @@
           recording = true;
           btn.textContent = 'Stop Recording';
           btn.classList.add('recording');
-          playBtn.disabled = true;   // prevent stale playback
+          playBtn.disabled = true;
           audioEl.style.display = 'none';
         } else {
           // **STOP recording**
