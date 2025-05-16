@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Voice Recorder & Transcript</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 2rem;
+      background: #f9f9f9;
+      color: #333;
+    }
+    .recorder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      font-size: 1rem;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button.recording {
+      background: #dc3545;
+    }
+    button:hover {
+      opacity: 0.9;
+    }
+    #transcript {
+      width: 100%;
+      max-width: 600px;
+      min-height: 150px;
+      border: 2px dashed #ccc;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      background: white;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="recorder">
+    <button id="toggleBtn">Start Recording</button>
+    <div id="transcript" placeholder="Your speech will appear here..."></div>
+  </div>
+
+  <script>
+    // Check for browser support
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Sorry, your browser does not support Speech Recognition.');
+    } else {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;       // keep recognizing as you speak
+      recognition.interimResults = true;   // show partial (interim) results
+
+      const btn = document.getElementById('toggleBtn');
+      const transcriptDiv = document.getElementById('transcript');
+      let recording = false;
+
+      // Toggle recording on button click
+      btn.addEventListener('click', () => {
+        if (!recording) {
+          recognition.start();
+          recording = true;
+          btn.textContent = 'Stop Recording';
+          btn.classList.add('recording');
+        } else {
+          recognition.stop();
+          recording = false;
+          btn.textContent = 'Start Recording';
+          btn.classList.remove('recording');
+        }
+      });
+
+      // Handle results
+      recognition.addEventListener('result', (event) => {
+        let interim = '';
+        let final = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            final += transcript;
+          } else {
+            interim += transcript;
+          }
+        }
+
+        // Show final + interim transcript
+        transcriptDiv.textContent = final + interim;
+      });
+
+      // Reset button if speech recognition ends unexpectedly
+      recognition.addEventListener('end', () => {
+        if (recording) {
+          // automatically restart if still meant to be recording
+          recognition.start();
+        } else {
+          btn.textContent = 'Start Recording';
+          btn.classList.remove('recording');
+        }
+      });
+
+      // Error handling
+      recognition.addEventListener('error', (e) => {
+        console.error('Speech recognition error', e);
+        alert('Error with speech recognition: ' + e.error);
+      });
+    }
+  </script>
+</body>
+</html>
