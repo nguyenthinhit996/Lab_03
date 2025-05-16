@@ -3,89 +3,92 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Cross-Browser Audio Recorder</title>
+  <title>Universal Audio Recorder & Playback</title>
   <style>
     body {
       font-family: Arial, sans-serif;
-      padding: 2rem;
       background: #f4f4f4;
       color: #333;
       display: flex;
       flex-direction: column;
       align-items: center;
+      padding: 2rem;
       gap: 1rem;
+    }
+    h1 {
+      margin-bottom: .5rem;
     }
     .controls {
       display: flex;
       gap: 1rem;
-      align-items: center;
     }
     button, input[type="file"] {
       background: #007bff;
       color: #fff;
       border: none;
-      padding: 0.75rem 1.5rem;
+      padding: .75rem 1.5rem;
+      border-radius: .5rem;
       font-size: 1rem;
-      border-radius: 0.5rem;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: opacity .2s;
     }
     button.recording {
       background: #dc3545;
     }
     button:disabled {
-      opacity: 0.5;
+      opacity: .5;
       cursor: not-allowed;
     }
     button:hover:not(:disabled),
     input[type="file"]:hover {
-      opacity: 0.9;
+      opacity: .9;
     }
     audio {
       width: 100%;
       max-width: 600px;
-      display: none;
       margin-top: 1rem;
+      display: none;
     }
   </style>
 </head>
 <body>
-  <h1>Audio Recorder & Playback</h1>
+  <h1>Universal Audio Recorder</h1>
   <div class="controls">
     <button id="recordBtn">Start Recording</button>
     <button id="playBtn" disabled>Play Recording</button>
-    <!-- fallback for iOS Chrome / unsupported browsers -->
+    <!-- Fallback for browsers without MediaRecorder -->
     <input type="file" id="fileInput" accept="audio/*" capture style="display:none;">
   </div>
   <audio id="player" controls></audio>
 
   <script>
-    const recordBtn = document.getElementById('recordBtn');
-    const playBtn   = document.getElementById('playBtn');
-    const fileInput = document.getElementById('fileInput');
-    const player    = document.getElementById('player');
+    const recordBtn  = document.getElementById('recordBtn');
+    const playBtn    = document.getElementById('playBtn');
+    const fileInput  = document.getElementById('fileInput');
+    const player     = document.getElementById('player');
 
     let mediaRecorder, audioChunks = [], mediaStream, recording = false;
 
-    // pick a MIME type that works in Safari & Chrome on iOS
+    // Detect MediaRecorder support
+    const canUseMediaRecorder = 
+      !!(navigator.mediaDevices &&
+         navigator.mediaDevices.getUserMedia &&
+         window.MediaRecorder);
+
+    // Try to pick a MIME that works cross-browser
     function pickMimeType() {
       if (!window.MediaRecorder) return '';
       const types = [
-        'audio/mp4;codecs=mp4a.40.2',
         'audio/webm;codecs=opus',
+        'audio/mp4;codecs=mp4a.40.2',
         'audio/mp4',
         'audio/mpeg'
       ];
       return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
     }
 
-    // detect if browser supports getUserMedia + MediaRecorder
-    function canRecord() {
-      return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
-    }
-
-    if (!canRecord()) {
-      // fallback UI: show file input, hide buttons
+    if (!canUseMediaRecorder) {
+      // Show fallback file input
       recordBtn.style.display = 'none';
       playBtn.style.display   = 'none';
       fileInput.style.display = 'inline-block';
@@ -96,32 +99,33 @@
         const url = URL.createObjectURL(file);
         player.src = url;
         player.style.display = 'block';
-        player.play();
+        playBtn.disabled = true;   // native UI will auto–play
       });
 
     } else {
-      // main recording flow
+      // Set up MediaRecorder flow
       recordBtn.addEventListener('click', async () => {
         if (!recording) {
-          // start
+          // Start recording
           mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          const mimeType = pickMimeType();
-          mediaRecorder = mimeType
-            ? new MediaRecorder(mediaStream, { mimeType })
+          const mime = pickMimeType();
+          mediaRecorder = mime
+            ? new MediaRecorder(mediaStream, { mimeType: mime })
             : new MediaRecorder(mediaStream);
 
           audioChunks = [];
-          mediaRecorder.addEventListener('dataavailable', e => {
+          mediaRecorder.ondataavailable = e => {
             if (e.data.size) audioChunks.push(e.data);
-          });
-          mediaRecorder.addEventListener('stop', () => {
+          };
+          mediaRecorder.onstop = () => {
             const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
             const url  = URL.createObjectURL(blob);
             player.src = url;
             player.style.display = 'block';
             playBtn.disabled = false;
+            // turn off the mic
             mediaStream.getTracks().forEach(t => t.stop());
-          });
+          };
 
           mediaRecorder.start();
           recording = true;
@@ -129,9 +133,8 @@
           recordBtn.classList.add('recording');
           playBtn.disabled = true;
           player.style.display = 'none';
-
         } else {
-          // stop
+          // Stop recording
           mediaRecorder.stop();
           recording = false;
           recordBtn.textContent = 'Start Recording';
