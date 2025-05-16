@@ -1,166 +1,110 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Voice Recorder & Transcript</title>
-<style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Universal Audio Recorder</title>
+  <style>
     body {
       font-family: Arial, sans-serif;
-      padding: 2rem;
-      background: #f9f9f9;
+      background: #f4f4f4;
       color: #333;
-    }
-    .recorder {
       display: flex;
       flex-direction: column;
       align-items: center;
+      padding: 2rem;
+      gap: 1rem;
+    }
+    h1 {
+      margin: 0;
+    }
+    .controls {
+      display: flex;
       gap: 1rem;
     }
     button {
       background: #007bff;
-      color: white;
+      color: #fff;
       border: none;
-      padding: 0.75rem 1.5rem;
+      padding: .75rem 1.5rem;
+      border-radius: .5rem;
       font-size: 1rem;
-      border-radius: 0.5rem;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: opacity .2s;
     }
     button.recording {
       background: #dc3545;
     }
-    button[disabled] {
-      opacity: 0.5;
+    button:disabled {
+      opacity: .5;
       cursor: not-allowed;
     }
-    button:hover:not([disabled]) {
-      opacity: 0.9;
-    }
-    #transcript {
-      width: 100%;
-      max-width: 600px;
-      min-height: 150px;
-      border: 2px dashed #ccc;
-      padding: 1rem;
-      border-radius: 0.5rem;
-      background: white;
-      overflow-y: auto;
-      white-space: pre-wrap;
+    button:hover:not(:disabled) {
+      opacity: .9;
     }
     audio {
-      margin-top: 0.5rem;
       width: 100%;
       max-width: 600px;
+      margin-top: 1rem;
+      display: none;
     }
-</style>
+  </style>
 </head>
 <body>
-<div class="recorder">
-<button id="toggleBtn">Start Recording</button>
-<button id="playBtn" disabled>Play Recording</button>
-<audio id="audioPlayback" controls style="display:none;"></audio>
-<div id="transcript" placeholder="Your speech will appear here..."></div>
-</div>
- 
+  <h1>Audio Recorder & Playback</h1>
+  <div class="controls">
+    <button id="recordBtn">Start Recording</button>
+    <button id="playBtn" disabled>Play Recording</button>
+  </div>
+  <audio id="player" controls></audio>
+
+  <!-- RecordRTC from CDN: handles MediaRecorder fallback -->
+  <script src="https://cdn.webrtc-experiment.com/RecordRTC.js"></script>
   <script>
-    // feature detection
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition || !navigator.mediaDevices || !window.MediaRecorder) {
-      alert('Sorry, your browser does not support one of the required APIs.');
-    } else {
-      const btn       = document.getElementById('toggleBtn');
-      const playBtn   = document.getElementById('playBtn');
-      const transcriptDiv = document.getElementById('transcript');
-      const audioEl   = document.getElementById('audioPlayback');
- 
-      let recording = false;
-      let recognition, mediaRecorder, audioChunks = [], mediaStream;
- 
-      // choose a MIME type that the browser supports
-      function pickMimeType() {
-        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-          return 'audio/webm;codecs=opus';
-        } else if (MediaRecorder.isTypeSupported('audio/mp4;codecs=mp4a.40.2')) {
-          return 'audio/mp4;codecs=mp4a.40.2';
-        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-          return 'audio/mp4';
-        } else if (MediaRecorder.isTypeSupported('audio/mpeg')) {
-          return 'audio/mpeg';
-        } else {
-          return '';
-        }
+    const recordBtn = document.getElementById('recordBtn');
+    const playBtn   = document.getElementById('playBtn');
+    const player    = document.getElementById('player');
+
+    let recorder, stream;
+
+    recordBtn.addEventListener('click', async () => {
+      if (recordBtn.dataset.recording !== 'true') {
+        // --- START Recording ---
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recorder = RecordRTC(stream, {
+          type: 'audio',
+          mimeType: 'audio/wav',               // WAV is universally playable
+          recorderType: RecordRTC.StereoAudioRecorder,
+          desiredSampRate: 16000,              // optional: smaller files
+        });
+        recorder.startRecording();
+
+        recordBtn.textContent = 'Stop Recording';
+        recordBtn.classList.add('recording');
+        playBtn.disabled = true;
+        player.style.display = 'none';
+        recordBtn.dataset.recording = 'true';
+      } else {
+        // --- STOP Recording ---
+        recorder.stopRecording(() => {
+          const blob = recorder.getBlob();
+          const url  = URL.createObjectURL(blob);
+          player.src = url;
+          player.style.display = 'block';
+          playBtn.disabled = false;
+          // shut off the mic
+          stream.getTracks().forEach(t => t.stop());
+        });
+
+        recordBtn.textContent = 'Start Recording';
+        recordBtn.classList.remove('recording');
+        recordBtn.dataset.recording = 'false';
       }
- 
-      // setup SpeechRecognition
-      recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
- 
-      recognition.addEventListener('result', (event) => {
-        let interim = '', final = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const text = event.results[i][0].transcript;
-          if (event.results[i].isFinal) final += text;
-          else interim += text;
-        }
-        transcriptDiv.textContent = final + interim;
-      });
- 
-      recognition.addEventListener('end', () => {
-        if (recording) recognition.start();
-        else btn.textContent = 'Start Recording';
-      });
- 
-      recognition.addEventListener('error', e => {
-        console.error('Speech recognition error', e);
-        alert('Speech recognition error: ' + e.error);
-      });
- 
-      btn.addEventListener('click', async () => {
-        if (!recording) {
-          // **START recording**
-          mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          const mimeType = pickMimeType();
-          mediaRecorder = mimeType
-            ? new MediaRecorder(mediaStream, { mimeType })
-            : new MediaRecorder(mediaStream);
- 
-          audioChunks = [];
-          mediaRecorder.addEventListener('dataavailable', e => {
-            if (e.data.size > 0) audioChunks.push(e.data);
-          });
-          mediaRecorder.addEventListener('stop', () => {
-            const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
-            const url  = URL.createObjectURL(blob);
-            audioEl.src = url;
-            audioEl.style.display = 'block';
-            playBtn.disabled = false;
-            mediaStream.getTracks().forEach(t => t.stop());
-          });
- 
-          mediaRecorder.start();
-          recognition.start();
- 
-          recording = true;
-          btn.textContent = 'Stop Recording';
-          btn.classList.add('recording');
-          playBtn.disabled = true;
-          audioEl.style.display = 'none';
-        } else {
-          // **STOP recording**
-          recognition.stop();
-          mediaRecorder.stop();
-          recording = false;
-          btn.textContent = 'Start Recording';
-          btn.classList.remove('recording');
-        }
-      });
- 
-      playBtn.addEventListener('click', () => {
-        if (audioEl.src) audioEl.play();
-      });
-    }
-</script>
+    });
+
+    playBtn.addEventListener('click', () => {
+      if (player.src) player.play();
+    });
+  </script>
 </body>
 </html>
